@@ -272,8 +272,6 @@ function notify(message: any, channel: any, nickname: string) {
         { message, channel },
         {
             overrideStreamerMode: settings.store.overrideStreamerMode,
-            sound: "message1",
-            volume: 0.4,
         }
     );
 }
@@ -281,7 +279,7 @@ function notify(message: any, channel: any, nickname: string) {
 export default definePlugin({
     name: "PriorityDM",
     description: "Bypass Do Not Disturb for DMs from specific people.",
-    authors: [{ name: "Snues", id: 98862725609816064n }],
+    authors: [{ name: "festivixy", id: 808910255374204989 }],
 
     settings,
 
