@@ -1,7 +1,10 @@
 import { definePluginSettings } from "@api/Settings";
+import { getUserSettingLazy } from "@api/UserSettings";
 import definePlugin, { OptionType } from "@utils/types";
-import { ChannelStore, FluxDispatcher, Forms, PresenceStore, Button, TextInput, UserStore, useState } from "@webpack/common";
+import { ChannelStore, FluxDispatcher, Forms, Button, TextInput, UserStore, useState } from "@webpack/common";
 import ErrorBoundary from "@components/ErrorBoundary";
+
+const StatusSetting = getUserSettingLazy<string>("status", "status")!;
 
 interface PriorityUser {
     id: string;
@@ -237,7 +240,7 @@ function onMessage(event: any) {
     const channel = ChannelStore.getChannel?.(message.channel_id);
     if (!channel || (channel.type !== 1 && channel.type !== 3)) return;
 
-    if (PresenceStore.getStatus?.(currentUser.id) !== "dnd") return;
+    if (StatusSetting.getSetting() !== "dnd") return;
 
     const priorityMap = getPriorityUsers();
     const entry = priorityMap.get(message.author.id);
@@ -253,7 +256,7 @@ function notify(message: any, _channel: any, nickname: string) {
 
     const author = message.author;
     const avatar = author.avatar
-        ? `https://cdn.discordapp.com/avatars/${author.id}/${author.avatar}.webp?size=128`
+        ? `https://cdn.discordapp.com/avatars/${author.id}/${author.avatar}.png?size=128`
         : `https://cdn.discordapp.com/embed/avatars/${(BigInt(author.id) >> 22n) % 6n}.png`;
 
     const displayName = nickname || author.globalName || author.username;
