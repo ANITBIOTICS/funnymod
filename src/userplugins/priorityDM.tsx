@@ -1,11 +1,7 @@
 import { definePluginSettings } from "@api/Settings";
-import { showNotification as showVencordNotification } from "@api/Notifications";
 import definePlugin, { OptionType } from "@utils/types";
-import { ChannelStore, FluxDispatcher, Forms, NavigationRouter, PresenceStore, Button, TextInput, UserStore, useState } from "@webpack/common";
-import { findByPropsLazy } from "@webpack";
+import { ChannelStore, FluxDispatcher, Forms, PresenceStore, Button, TextInput, UserStore, useState } from "@webpack/common";
 import ErrorBoundary from "@components/ErrorBoundary";
-
-const NotificationModule = findByPropsLazy("showNotification", "requestPermission");
 
 interface PriorityUser {
     id: string;
@@ -32,6 +28,7 @@ function PriorityUsersComponent() {
     const [newNick, setNewNick] = useState("");
     const [error, setError] = useState("");
     const [editingId, setEditingId] = useState<string | null>(null);
+    const [editUserId, setEditUserId] = useState("");
     const [editNick, setEditNick] = useState("");
 
     function addUser() {
@@ -57,15 +54,27 @@ function PriorityUsersComponent() {
 
     function startEdit(user: PriorityUser) {
         setEditingId(user.id);
+        setEditUserId(user.id);
         setEditNick(user.nickname);
     }
 
-    function saveEdit(id: string) {
+    function saveEdit(oldId: string) {
+        const trimmedId = editUserId.trim();
+        if (!trimmedId || !/^\d{17,20}$/.test(trimmedId)) {
+            setError("Must be a valid Discord user ID (17-20 digits)");
+            return;
+        }
+        if (trimmedId !== oldId && users.some(u => u.id === trimmedId)) {
+            setError("User already in list");
+            return;
+        }
         savePriorityUsers(users.map(u =>
-            u.id === id ? { ...u, nickname: editNick.trim() } : u
+            u.id === oldId ? { id: trimmedId, nickname: editNick.trim() } : u
         ));
         setEditingId(null);
+        setEditUserId("");
         setEditNick("");
+        setError("");
     }
 
     return (
@@ -117,11 +126,15 @@ function PriorityUsersComponent() {
                 }}>
                     {editingId === u.id ? (
                         <>
-                            <span style={{ minWidth: 0 }}>
-                                <UserLabel userId={u.id} />
-                            </span>
                             <TextInput
-                                placeholder="Nickname"
+                                placeholder="User ID"
+                                value={editUserId}
+                                onChange={setEditUserId}
+                                onKeyDown={(e: KeyboardEvent) => e.key === "Enter" && saveEdit(u.id)}
+                                style={{ flex: 1 }}
+                            />
+                            <TextInput
+                                placeholder="Nickname (optional)"
                                 value={editNick}
                                 onChange={setEditNick}
                                 onKeyDown={(e: KeyboardEvent) => e.key === "Enter" && saveEdit(u.id)}
@@ -224,53 +237,39 @@ function onMessage(event: any) {
     const channel = ChannelStore.getChannel?.(message.channel_id);
     if (!channel || (channel.type !== 1 && channel.type !== 3)) return;
 
+    if (PresenceStore.getStatus?.(currentUser.id) !== "dnd") return;
+
     const priorityMap = getPriorityUsers();
     const entry = priorityMap.get(message.author.id);
     if (!entry) return;
 
-    const isDnd = PresenceStore.getStatus?.(currentUser.id) === "dnd";
-    notify(message, channel, entry.nickname, isDnd);
+    notify(message, channel, entry.nickname);
 }
 
-function notify(message: any, channel: any, nickname: string, isDnd: boolean) {
+function notify(message: any, _channel: any, nickname: string) {
     const now = Date.now();
     if (now - lastPing < 1000) return;
     lastPing = now;
 
     const author = message.author;
     const avatar = author.avatar
-        ? `https://cdn.discordapp.com/avatars/${author.id}/${author.avatar}.png`
+        ? `https://cdn.discordapp.com/avatars/${author.id}/${author.avatar}.webp?size=128`
         : `https://cdn.discordapp.com/embed/avatars/${(BigInt(author.id) >> 22n) % 6n}.png`;
 
     const displayName = nickname || author.globalName || author.username;
 
-    if (isDnd) {
-        // DND: force native OS notification to bypass suppression
-        NotificationModule.showNotification?.(
-            avatar,
-            displayName,
-            message.content,
-            { message, channel },
-            {
-                overrideStreamerMode: settings.store.overrideStreamerMode,
-                sound: "message1",
-                volume: 0.4
-            }
-        );
-    } else {
-        // Not DND: use Vencord's in-app toast (overlay-friendly)
-        showVencordNotification({
-            title: displayName,
-            body: message.content,
-            icon: avatar,
-            onClick: () => NavigationRouter.transitionToGuild("@me", channel.id),
-        });
-    }
+    // Use browser Notification API directly to ONLY get an OS notification
+    // Discord's internal NotificationModule shows an in-app popup too
+    new Notification(displayName, {
+        body: message.content,
+        icon: avatar,
+        silent: false,
+    });
 }
 
 export default definePlugin({
     name: "PriorityDM",
-    description: "Priority notifications for DMs from specific people. Native alerts when in DND, in-app toasts otherwise.",
+    description: "Bypass Do Not Disturb for DMs from specific people.",
     authors: [{ name: "Snues", id: 98862725609816064n }],
 
     settings,
