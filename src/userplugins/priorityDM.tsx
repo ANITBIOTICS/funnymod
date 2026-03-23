@@ -1,8 +1,11 @@
 import { definePluginSettings } from "@api/Settings";
 import { getUserSettingLazy } from "@api/UserSettings";
 import definePlugin, { OptionType } from "@utils/types";
+import { findByPropsLazy } from "@webpack";
 import { ChannelStore, FluxDispatcher, Forms, Button, TextInput, UserStore, useState } from "@webpack/common";
 import ErrorBoundary from "@components/ErrorBoundary";
+
+const NotificationModule = findByPropsLazy("showNotification", "requestPermission");
 
 const StatusSetting = getUserSettingLazy<string>("status", "status")!;
 
@@ -241,6 +244,7 @@ function onMessage(event: any) {
     if (!channel || (channel.type !== 1 && channel.type !== 3)) return;
 
     if (StatusSetting.getSetting() !== "dnd") return;
+    if (document.hasFocus()) return;
 
     const priorityMap = getPriorityUsers();
     const entry = priorityMap.get(message.author.id);
@@ -249,25 +253,29 @@ function onMessage(event: any) {
     notify(message, channel, entry.nickname);
 }
 
-function notify(message: any, _channel: any, nickname: string) {
+function notify(message: any, channel: any, nickname: string) {
     const now = Date.now();
     if (now - lastPing < 1000) return;
     lastPing = now;
 
     const author = message.author;
     const avatar = author.avatar
-        ? `https://cdn.discordapp.com/avatars/${author.id}/${author.avatar}.png?size=128`
+        ? `https://cdn.discordapp.com/avatars/${author.id}/${author.avatar}.png`
         : `https://cdn.discordapp.com/embed/avatars/${(BigInt(author.id) >> 22n) % 6n}.png`;
 
     const displayName = nickname || author.globalName || author.username;
 
-    // Use browser Notification API directly to ONLY get an OS notification
-    // Discord's internal NotificationModule shows an in-app popup too
-    new Notification(displayName, {
-        body: message.content,
-        icon: avatar,
-        silent: false,
-    });
+    NotificationModule.showNotification(
+        avatar,
+        displayName,
+        message.content,
+        { message, channel },
+        {
+            overrideStreamerMode: settings.store.overrideStreamerMode,
+            sound: "message1",
+            volume: 0.4,
+        }
+    );
 }
 
 export default definePlugin({
