@@ -9,6 +9,105 @@ const NotificationModule = findByPropsLazy("showNotification", "requestPermissio
 
 const StatusSetting = getUserSettingLazy<string>("status", "status")!;
 
+let pluginEnabled = true;
+const listeners = new Set<() => void>();
+
+let toastEl: HTMLDivElement | null = null;
+let toastTimer: ReturnType<typeof setTimeout> | null = null;
+
+function showOverlayToast(text: string) {
+    if (toastEl) {
+        if (toastTimer) clearTimeout(toastTimer);
+        toastEl.remove();
+        toastEl = null;
+    }
+    const el = document.createElement("div");
+    el.textContent = text;
+    Object.assign(el.style, {
+        position: "fixed",
+        top: "12px",
+        left: "12px",
+        padding: "4px 10px",
+        borderRadius: "4px",
+        backgroundColor: "rgba(0,0,0,0.7)",
+        color: "#ccc",
+        fontSize: "12px",
+        fontFamily: "var(--font-primary)",
+        fontWeight: "500",
+        zIndex: "999999",
+        pointerEvents: "none",
+        opacity: "1",
+        transition: "opacity 0.1s ease",
+    });
+    document.body.appendChild(el);
+    toastEl = el;
+    toastTimer = setTimeout(() => {
+        el.style.opacity = "0";
+        setTimeout(() => { if (toastEl === el) { el.remove(); toastEl = null; } }, 120);
+    }, 600);
+}
+
+function togglePlugin() {
+    pluginEnabled = !pluginEnabled;
+    for (const fn of listeners) fn();
+    showOverlayToast(`PriorityDM ${pluginEnabled ? "ON" : "OFF"}`);
+}
+
+function onKeyDown(e: KeyboardEvent) {
+    if (e.ctrlKey && e.altKey && e.code === "Backslash") {
+        e.preventDefault();
+        togglePlugin();
+    }
+}
+
+let indicatorEl: HTMLDivElement | null = null;
+
+function updateIndicator() {
+    if (!indicatorEl) return;
+    indicatorEl.style.backgroundColor = pluginEnabled ? "var(--green-360)" : "var(--background-primary)";
+    indicatorEl.style.color = pluginEnabled ? "white" : "var(--text-muted)";
+    indicatorEl.title = `PriorityDM: ${pluginEnabled ? "ON" : "OFF"} (Ctrl+Alt+\\)`;
+}
+
+function createIndicator() {
+    indicatorEl = document.createElement("div");
+    indicatorEl.id = "vc-priority-dm-indicator";
+    indicatorEl.textContent = "P";
+    Object.assign(indicatorEl.style, {
+        position: "fixed",
+        bottom: "14px",
+        right: "14px",
+        width: "24px",
+        height: "24px",
+        borderRadius: "50%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        cursor: "pointer",
+        fontSize: "11px",
+        fontWeight: "700",
+        transition: "background-color 0.2s, color 0.2s, opacity 0.2s",
+        zIndex: "99999",
+        userSelect: "none",
+        opacity: "0.35",
+    });
+    indicatorEl.addEventListener("mouseenter", () => { if (indicatorEl) indicatorEl.style.opacity = "1"; });
+    indicatorEl.addEventListener("mouseleave", () => { if (indicatorEl) indicatorEl.style.opacity = "0.35"; });
+    updateIndicator();
+    indicatorEl.addEventListener("click", togglePlugin);
+    document.body.appendChild(indicatorEl);
+    listeners.add(updateIndicator);
+}
+
+function removeIndicator() {
+    listeners.delete(updateIndicator);
+    if (indicatorEl) {
+        indicatorEl.removeEventListener("click", togglePlugin);
+        indicatorEl.remove();
+        indicatorEl = null;
+    }
+}
+
 interface PriorityUser {
     id: string;
     nickname: string;
@@ -245,6 +344,7 @@ function onMessage(event: any) {
 
     if (StatusSetting.getSetting() !== "dnd") return;
     if (document.hasFocus()) return;
+    if (!pluginEnabled) return;
 
     const priorityMap = getPriorityUsers();
     const entry = priorityMap.get(message.author.id);
@@ -286,10 +386,15 @@ export default definePlugin({
     settings,
 
     start() {
+        pluginEnabled = true;
         FluxDispatcher.subscribe("MESSAGE_CREATE", onMessage);
+        document.addEventListener("keydown", onKeyDown);
+        createIndicator();
     },
 
     stop() {
         FluxDispatcher.unsubscribe("MESSAGE_CREATE", onMessage);
+        document.removeEventListener("keydown", onKeyDown);
+        removeIndicator();
     }
 });
